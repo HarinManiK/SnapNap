@@ -70,15 +70,18 @@ The application will restore and continue running like nothing happened.
 
 ---
 
-**Caution**: If you pause an online game(connected to a server) or an application that is downloading something(also connected to a server), the server might disconnect you(time out). And when you resume it, it may behave the same way it does when your internet connection drops.
+## Caution
 
-For example:
+If you pause an online game or an application that is connected to a server (for example, downloading a file), the server may disconnect you after some time.
 
-Online games may show a connection lost message. And ask you to reconnect(still fine instead of closing the game and wait for the loading screens).
+When the application resumes, it may behave the same way it does when your internet connection drops.
 
-Downloads may pause or restart.
+Examples:
 
-For scenarios like watching youtube on Google Chrome, don't worry. Feel free to use it.
+- Online games may show a **connection lost** message and ask you to reconnect.
+- Downloads may pause or restart.
+
+For situations like watching YouTube in Google Chrome, this usually works fine.
 
 ---
 
