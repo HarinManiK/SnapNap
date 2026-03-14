@@ -70,7 +70,7 @@ The application will restore and continue running like nothing happened.
 
 ---
 
-**Caution:**
+## Caution
 
 If you pause an online game or an application that is connected to a server (for example, downloading a file), the server may disconnect you after some time.
 
