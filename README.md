@@ -2,7 +2,7 @@
 **Xbox-style Quick Resume for Windows** - instantly pause &amp; resume apps or games with **0% CPU/GPU usage while paused**.
 
 
-SnapNap is a small Windows utility that lets you **pause and resume the currently active application instantly** using a simple hotkey(Alt+Shift+A).
+SnapNap is a small Windows utility that lets you **pause and resume the currently active application instantly** using a simple hotkey(**Alt+Shift+A**).
 
 Instead of closing an application, SnapNap temporarily pauses it so it stops using CPU resources while keeping everything exactly as it was.
 
@@ -16,7 +16,7 @@ Press the hotkey again and the application continues running normally like nothi
 * Resume the application with the same hotkey
 * Works from anywhere in Windows
 * System tray controls
-* Avoids important OS related processes
+* Avoids important Windows system processes
 * Starts automatically when you log in
 * Lightweight and fast
 
@@ -39,8 +39,7 @@ https://github.com/<username>/SnapNap/releases
 
 SnapNap.exe
 
-That's all. From the next time, it'll auto-start when you log in to your device.
-
+That's it. SnapNap will start automatically the next time you log in.
 ---
 
 ## How to Use
@@ -71,7 +70,7 @@ The application will restore and continue running like nothing happened.
 
 ---
 
-**Caution**: If you pause an online game(connected to a server) or an applcation that is downloading something(also connected to a server), the server might disconnect you(time out). And when you resume it, it may behave the same way it does when your internet connection drops.
+**Caution**: If you pause an online game(connected to a server) or an application that is downloading something(also connected to a server), the server might disconnect you(time out). And when you resume it, it may behave the same way it does when your internet connection drops.
 
 For example:
 
@@ -79,7 +78,7 @@ Online games may show a connection lost message. And ask you to reconnect(still 
 
 Downloads may pause or restart.
 
-For scenarios like watching youtube on google chrome, don't worry. Feel free to use it.
+For scenarios like watching youtube on Google Chrome, don't worry. Feel free to use it.
 
 ---
 
@@ -116,7 +115,7 @@ This helps keep Windows running normally.
 SnapNap saves logs here:
 
 ```
-C:\Users\<user>\AppData\Roaming\SnapNapsuspend_manager.log
+C:\Users\<user>\AppData\Roaming\SnapNap\suspend_manager.log
 ```
 
 Logs can help identify problems if something does not work as expected.
