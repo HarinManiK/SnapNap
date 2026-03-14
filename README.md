@@ -46,9 +46,7 @@ Free your system resources instantly without closing large applications or waiti
 
 1. Download the latest version from: https://github.com/HarinManiK/SnapNap/releases/tag/v1.0
 
-2. Run:
-
-SnapNap.exe
+2. Run: SnapNap.exe
 
 That's it. SnapNap will start automatically the next time you log in.
 ---
