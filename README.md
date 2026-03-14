@@ -157,8 +157,6 @@ SnapNapUninstaller.exe
 
 ## License
 
-## License
-
 SnapNap is distributed under the **SnapNap Personal Use License (SPUL-1.0)**.
 
 Personal use is permitted. Commercial use requires a separate license.
