@@ -1,5 +1,5 @@
 # SnapNap
-Xbox-style Quick Resume for Windows - instantly pause &amp; resume apps or games with 0% CPU/GPU usage while paused.
+**Xbox-style Quick Resume for Windows** - instantly pause &amp; resume apps or games with **0% CPU/GPU usage while paused**.
 
 
 SnapNap is a small Windows utility that lets you **pause and resume the currently active application instantly** using a simple hotkey(Alt+Shift+A).
