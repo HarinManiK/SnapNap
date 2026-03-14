@@ -127,9 +127,7 @@ Logs can help identify problems if something does not work as expected.
 
 To remove SnapNap, download and run:
 
-```
 SnapNapUninstaller.exe
-```
 
 ---
 
