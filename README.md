@@ -8,6 +8,10 @@ Instead of closing an application, SnapNap temporarily pauses it so it stops usi
 
 Press the hotkey again and the application continues running normally like nothing happened.
 
+---
+
+## Demo
+
 **Pause:**
 ![SnapNap Pause Demo](assets/pause-demo.gif)
 
