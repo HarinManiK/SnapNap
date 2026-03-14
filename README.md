@@ -70,9 +70,7 @@ The application will restore and continue running like nothing happened.
 
 ---
 
-## Caution
-
-If you pause an online game or an application that is connected to a server (for example, downloading a file), the server may disconnect you after some time.
+**Caution:** If you pause an online game or an application that is connected to a server (for example, downloading a file), the server may disconnect you after some time.
 
 When the application resumes, it may behave the same way it does when your internet connection drops.
 
