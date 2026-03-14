@@ -81,6 +81,8 @@ Downloads may pause or restart.
 
 For scenarios like watching youtube on google chrome, don't worry. Feel free to use it.
 
+---
+
 ## System Tray
 
 SnapNap runs quietly in the Windows system tray.
