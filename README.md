@@ -69,6 +69,7 @@ Press **Alt + Shift + A** again.
 
 The application will restore and continue running like nothing happened.
 
+---
 
 **Caution**: If you pause an online game(connected to a server) or an applcation that is downloading something(also connected to a server), the server might disconnect you(time out). And when you resume it, it may behave the same way it does when your internet connection drops.
 
