@@ -11,6 +11,11 @@ Press the hotkey again and the application continues running normally like nothi
 **Pause**:
 ![SnapNap Pause Demo](assets/pause-demo.gif)
 
+
+**Resume**:
+![SnapNap Resume Demo](assets/resume-demo.gif)
+
+
 ---
 
 ## Features
