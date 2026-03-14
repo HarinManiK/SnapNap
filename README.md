@@ -46,7 +46,7 @@ Free your system resources instantly without closing large applications or waiti
 
 1. Download the latest version from:
 
-https://github.com/<username>/SnapNap/releases
+https://github.com/HarinManiK/SnapNap/releases/tag/v1.0
 
 2. Run:
 
