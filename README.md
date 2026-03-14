@@ -92,7 +92,7 @@ When the application resumes, it may behave the same way it does when your inter
 
 Examples:
 
-- Online games may show a **connection lost** message and ask you to reconnect.
+- Online games may show a **connection lost** message and ask you to reconnect(still good, instead of re-opening the game and waiting for the loading screens).
 - Downloads may pause or restart.
 
 For situations like watching YouTube in Google Chrome, this usually works fine.
