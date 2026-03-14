@@ -1,0 +1,4 @@
+psutil
+pystray
+Pillow
+pywin32
