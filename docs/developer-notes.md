@@ -416,11 +416,10 @@ This occurs because the application stops responding to network activity while s
 Potential improvements include:
 
 * multiple paused sessions
+* Resume the game even with Alt+Tab
 * configurable hotkeys
-* custom tray icons
-* pause indicators
-* better handling of GPU-intensive applications
-
+* Freeing the RAM
+* Instead of suspending process tree, use windows objects(some apps spawn detached processes that are not children anymore)
 ---
 
 # Summary
