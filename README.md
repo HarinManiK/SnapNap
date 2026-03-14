@@ -51,6 +51,7 @@ Free your system resources instantly without closing large applications or waiti
 SnapNap.exe
 
 That's it. SnapNap will start automatically the next time you log in.
+
 ---
 
 ## How to Use
