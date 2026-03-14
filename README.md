@@ -22,6 +22,19 @@ Press the hotkey again and the application continues running normally like nothi
 
 ---
 
+## Benefits
+
+Never close your session
+Pause a game or heavy application and return later exactly where you left off.
+
+Saves battery and power
+Paused apps consume 0% CPU/GPU, preventing unnecessary power usage.
+
+Multitask efficiently
+Free your system resources instantly without closing large applications or waiting for them to load again.
+
+---
+
 ## Requirements
 
 * Windows 10 or Windows 11
