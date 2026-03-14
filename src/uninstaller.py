@@ -1,18 +1,3 @@
-# ============================================================
-#  SnapNap Uninstaller
-#  Requires Administrator privileges (embedded UAC manifest via PyInstaller)
-#
-#  Flow:
-#    - Check if SnapNap.exe is running
-#      → YES: Show warning, auto-close in 5 seconds
-#      → NO:  Show progress bar, perform 3 uninstall steps
-#
-#  Steps:
-#    1. Delete %APPDATA%\SnapNap folder
-#    2. Delete "SnapNap" scheduled task
-#    3. Locate and delete SnapNap.exe from disk
-# ============================================================
-
 import os
 import sys
 import ctypes
@@ -26,14 +11,12 @@ from tkinter import ttk
 
 import psutil
 
-# ── Constants ─────────────────────────────────────────────────────────────────
 APP_NAME = "SnapNap"
 EXE_NAME = "SnapNap.exe"
 APPDATA_FOLDER = os.path.join(
     os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME
 )
 
-# ── Colors ────────────────────────────────────────────────────────────────────
 BG_DARK      = "#1a1a2e"
 BG_CARD      = "#16213e"
 ACCENT_BLUE  = "#3B3BF5"
@@ -45,7 +28,6 @@ TEXT_SUCCESS  = "#51cf66"
 PROGRESS_BG  = "#2a2a4a"
 
 
-# ── UAC elevation ────────────────────────────────────────────────────────────
 
 def is_admin() -> bool:
     try:
@@ -64,7 +46,6 @@ def elevate_self():
     sys.exit(0)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _own_exe_path() -> str:
     if getattr(sys, "frozen", False):
@@ -85,7 +66,6 @@ def is_snapnap_running() -> bool:
     return False
 
 
-# ── Uninstall steps ───────────────────────────────────────────────────────────
 
 def step_delete_appdata() -> bool:
     if os.path.isdir(APPDATA_FOLDER):
@@ -119,7 +99,6 @@ def step_find_and_delete_exe() -> bool:
 
     search_roots: list[str] = []
 
-    # Priority user locations
     for env in ("USERPROFILE", "LOCALAPPDATA", "PROGRAMFILES",
                 "PROGRAMFILES(X86)", "APPDATA"):
         p = os.environ.get(env)
@@ -132,7 +111,6 @@ def step_find_and_delete_exe() -> bool:
         if os.path.isdir(p):
             search_roots.append(p)
 
-    # All fixed drives
     for letter in string.ascii_uppercase:
         drive = f"{letter}:\\"
         try:
@@ -143,7 +121,6 @@ def step_find_and_delete_exe() -> bool:
         except Exception:
             continue
 
-    # Deduplicate
     seen: set[str] = set()
     unique: list[str] = []
     for r in search_roots:
@@ -167,7 +144,6 @@ def step_find_and_delete_exe() -> bool:
     return deleted_all
 
 
-# ── GUI ───────────────────────────────────────────────────────────────────────
 
 class UninstallerApp:
 
@@ -179,20 +155,17 @@ class UninstallerApp:
         self.root.configure(bg=BG_DARK)
         self.root.overrideredirect(False)
 
-        # Center on screen
         self.root.update_idletasks()
         w, h = 480, 300
         x = (self.root.winfo_screenwidth() - w) // 2
         y = (self.root.winfo_screenheight() - h) // 2
         self.root.geometry(f"{w}x{h}+{x}+{y}")
 
-        # Force to foreground
         self.root.attributes("-topmost", True)
         self.root.after(200, lambda: self.root.attributes("-topmost", False))
         self.root.lift()
         self.root.focus_force()
 
-        # Style
         style = ttk.Style()
         style.theme_use("clam")
         style.configure(
@@ -208,7 +181,6 @@ class UninstallerApp:
         self._build_ui()
 
     def _build_ui(self):
-        # ── Header ──
         header = tk.Frame(self.root, bg=BG_DARK, height=70)
         header.pack(fill="x", padx=30, pady=(25, 0))
         header.pack_propagate(False)
@@ -222,18 +194,15 @@ class UninstallerApp:
             fg=TEXT_DIM, bg=BG_DARK
         ).pack(anchor="w")
 
-        # ── Separator ──
         sep = tk.Frame(self.root, bg=ACCENT_BLUE, height=2)
         sep.pack(fill="x", padx=30, pady=(10, 15))
 
-        # ── Status label ──
         self.status_label = tk.Label(
             self.root, text="Checking...", font=("Segoe UI", 11),
             fg=TEXT_WHITE, bg=BG_DARK, anchor="w"
         )
         self.status_label.pack(fill="x", padx=30)
 
-        # ── Progress bar ──
         self.progress_var = tk.DoubleVar(value=0)
         self.progress = ttk.Progressbar(
             self.root, variable=self.progress_var,
@@ -242,21 +211,18 @@ class UninstallerApp:
         )
         self.progress.pack(padx=30, pady=(15, 10))
 
-        # ── Step detail label ──
         self.detail_label = tk.Label(
             self.root, text="", font=("Segoe UI", 9),
             fg=TEXT_DIM, bg=BG_DARK, anchor="w"
         )
         self.detail_label.pack(fill="x", padx=30)
 
-        # ── Countdown / result label ──
         self.result_label = tk.Label(
             self.root, text="", font=("Segoe UI", 10, "bold"),
             fg=TEXT_SUCCESS, bg=BG_DARK
         )
         self.result_label.pack(pady=(10, 0))
 
-        # ── OK button (hidden initially) ──
         self.ok_btn = tk.Button(
             self.root, text="OK", font=("Segoe UI", 10, "bold"),
             fg=TEXT_WHITE, bg=ACCENT_BLUE, activebackground=ACCENT_LIGHT,
@@ -278,12 +244,10 @@ class UninstallerApp:
         self.ok_btn.pack(pady=(5, 15))
 
     def run(self):
-        # Start the logic in a background thread
         threading.Thread(target=self._run_logic, daemon=True).start()
         self.root.mainloop()
 
     def _run_logic(self):
-        # ── Pre-check: is SnapNap running? ──
         self.root.after(0, self.set_status, "Checking if SnapNap is running...")
         time.sleep(0.5)
 
@@ -301,7 +265,6 @@ class UninstallerApp:
             self.root.after(0, self.root.destroy)
             return
 
-        # ── Step 1/3: Delete AppData folder ──
         self.root.after(0, self.set_status, "Uninstalling...")
         self.root.after(0, self.set_detail, "[1/3]  Deleting AppData folder...")
         self.root.after(0, self.set_progress, 5)
@@ -310,14 +273,12 @@ class UninstallerApp:
         self.root.after(0, self.set_progress, 30)
         time.sleep(0.3)
 
-        # ── Step 2/3: Remove scheduled task ──
         self.root.after(0, self.set_detail, "[2/3]  Removing scheduled task...")
         time.sleep(0.3)
         s2 = step_remove_task()
         self.root.after(0, self.set_progress, 55)
         time.sleep(0.3)
 
-        # ── Step 3/3: Locate and delete SnapNap.exe ──
         self.root.after(0, self.set_detail,
                         "[3/3]  Searching for SnapNap.exe — this may take a moment...")
         time.sleep(0.3)
@@ -325,7 +286,6 @@ class UninstallerApp:
         self.root.after(0, self.set_progress, 100)
         time.sleep(0.3)
 
-        # ── Result ──
         errors: list[str] = []
         if not s1:
             errors.append("AppData folder")
@@ -346,7 +306,6 @@ class UninstallerApp:
                             "Successfully uninstalled", TEXT_SUCCESS)
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
     if not is_admin():
