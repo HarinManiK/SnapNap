@@ -1,3 +1,8 @@
+# SnapNap
+# Copyright (c) 2026 Harin Mani Karri
+# Licensed under the SnapNap Personal Use License (SPUL-1.0)
+# See LICENSE file in the repository for full license text.
+
 import os, sys, time, ctypes, ctypes.wintypes, logging, threading, subprocess, psutil, win32gui, win32process, win32api, win32con, pystray
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
