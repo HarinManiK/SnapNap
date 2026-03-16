@@ -15,7 +15,7 @@ SnapNap is a small Windows utility that lets you **pause and resume the currentl
 
 Instead of closing an application, SnapNap temporarily pauses it so it stops using CPU resources while keeping everything exactly as it was.
 
-Press the hotkey again and the application continues running normally like nothing happened.
+Press the hotkey again and the application continues running instantly like nothing happened.
 
 (For developers, check out developer-notes.md in docs folder for detailed notes).
 
