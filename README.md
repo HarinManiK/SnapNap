@@ -71,6 +71,8 @@ SnapNap.exe
 
 That's it. SnapNap will start automatically the next time you log in.
 
+(make sure to add an exclusion in windows defender or any anti-virus you use. Since this is something that runs in the background and has ability to suspend other processes, they'll likely flag it).
+
 ---
 
 ## How to Use
