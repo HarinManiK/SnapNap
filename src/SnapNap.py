@@ -89,7 +89,7 @@ def elevate_self():
     else:
         exe    = sys.executable
         params = f'"{os.path.abspath(__file__)}"'
-    ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 1)
+    ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 0)
     sys.exit(0)
 
 
@@ -116,18 +116,21 @@ def register_task_scheduler():
                 "/F",
             ],
             capture_output=True, text=True, timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         if result.returncode == 0:
             logger.info("Task Scheduler entry created/updated: %s", cmd)
 
             subprocess.run([
                 "powershell",
+                "-WindowStyle", "Hidden",
                 "-Command",
                 f"$t = Get-ScheduledTask -TaskName '{APP_NAME}'; "
                 "$t.Settings.DisallowStartIfOnBatteries=$false; "
                 "$t.Settings.StopIfGoingOnBatteries=$false; "
                 "Set-ScheduledTask $t"
-            ], capture_output=True, timeout=10)
+            ], capture_output=True, timeout=10,
+               creationflags=subprocess.CREATE_NO_WINDOW)
         else:
             logger.warning("schtasks stderr: %s", result.stderr.strip())
     except Exception as e:
@@ -173,7 +176,9 @@ def _nt_resume(pid: int) -> bool:
 class AppSession:
     hwnd: int
     pid: int
+    # Store (pid, name) tuples — not live Process objects (which go stale)
     suspended_pids: List[Tuple[int, str]] = field(default_factory=list)
+
 
 
 class WindowDetector:
@@ -202,7 +207,9 @@ class WindowDetector:
         return hwnd
 
 
+
 class ProcessController:
+
     @staticmethod
     def is_safe(pid: int, name: str) -> bool:
         if pid < PROTECTED_PID_CEIL or pid == os.getpid():
@@ -210,6 +217,7 @@ class ProcessController:
         if name.lower() in PROTECTED_PROCESSES:
             return False
         return True
+
 
 # Return list of (pid, name) tuples in root first, children after (BFS order) and include only safe to suspend entries.
     @staticmethod
@@ -243,6 +251,7 @@ class ProcessController:
 
         return tree
 
+
 # Suspend deepest children first, root last
     @staticmethod
     def suspend_tree(tree: List[Tuple[int, str]]) -> List[Tuple[int, str]]:
@@ -255,6 +264,7 @@ class ProcessController:
                 logger.warning("Failed to suspend: %s (PID %d)", name, pid)
         return actually_suspended
 
+
 # Resume root first, children last(reverse of suspend order)
     @staticmethod
     def resume_tree(suspended_pids: List[Tuple[int, str]]):
@@ -266,8 +276,9 @@ class ProcessController:
 
 
 
-# Session Manager: idle to paused and vice verse. Single session only
+# Session Manager: idle to paused and vice versa. Single session only
 class SessionManager:
+
     STATE_IDLE   = "IDLE"
     STATE_PAUSED = "PAUSED"
 
@@ -277,6 +288,7 @@ class SessionManager:
         self._lock   = threading.Lock()
         self.tray_icon: Optional[pystray.Icon] = None
 
+
 # Tell pystray to re-evaluate menu item enabled/checked states
     def _notify_tray(self):
         try:
@@ -285,270 +297,7 @@ class SessionManager:
         except Exception:
             pass
 
+
 # Pause session
     def pause(self):
-        with self._lock:
-            if self.state != self.STATE_IDLE:
-                logger.info("Already in state %s — ignoring pause request.", self.state)
-                return
-
-            hwnd = None
-            for _ in range(20):
-                hwnd = WindowDetector.get_foreground_window()
-                if hwnd:
-                    break
-                time.sleep(0.05)
-
-            if not hwnd:
-                logger.info("No suspendable foreground window detected.")
-                return
-
-            _, pid = win32process.GetWindowThreadProcessId(hwnd)
-            try:
-                proc_name = psutil.Process(pid).name()
-            except Exception:
-                proc_name = "Unknown"
-
-            if not ProcessController.is_safe(pid, proc_name):
-                logger.warning("Safety block: cannot suspend %s (PID %d)", proc_name, pid)
-                return
-
-            logger.info("Suspending: %s (PID %d)", proc_name, pid)
-
-# Post minimize via the window's own message queue (thread-safe)
-            win32gui.PostMessage(hwnd, win32con.WM_SYSCOMMAND, win32con.SC_MINIMIZE, 0)
-            time.sleep(0.200)
-
-            tree = ProcessController.get_process_tree(pid)
-            if not tree:
-                logger.warning("Empty process tree — aborting.")
-                return
-
-            actually_suspended = ProcessController.suspend_tree(tree)
-            if not actually_suspended:
-                logger.warning("No processes were suspended.")
-                return
-
-            self.session = AppSession(hwnd=hwnd, pid=pid,
-                                      suspended_pids=actually_suspended)
-            self.state = self.STATE_PAUSED
-            logger.info("State → PAUSED  (%d processes)", len(actually_suspended))
-            self._notify_tray()
-
-
-# Resume session
-    def resume(self):
-        with self._lock:
-            if self.state != self.STATE_PAUSED or not self.session:
-                self.state = self.STATE_IDLE
-                self.session = None
-                return
-
-            logger.info("Resuming session (root PID %d)…", self.session.pid)
-
-            ProcessController.resume_tree(self.session.suspended_pids)
-
-            time.sleep(0.200)
-
-# Restore and focus
-            try:
-                hwnd = self.session.hwnd
-                if win32gui.IsWindow(hwnd):
-                    win32gui.PostMessage(hwnd, win32con.WM_SYSCOMMAND,
-                                         win32con.SC_RESTORE, 0)
-                    time.sleep(0.100)
-
-# Bypass SetForegroundWindow restriction by simulating Alt key
-                    user32 = ctypes.windll.user32
-                    VK_MENU = 0x12
-                    KEYEVENTF_KEYUP = 0x0002
-                    user32.keybd_event(VK_MENU, 0, 0, 0) #Alt down
-                    user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0) #Alt up
-
-# Now AttachThreadInput + SetForegroundWindow
-                    cur = win32api.GetCurrentThreadId()
-                    fg, _ = win32process.GetWindowThreadProcessId(hwnd)
-                    if cur != fg:
-                        win32api.AttachThreadInput(cur, fg, True)
-                        win32gui.SetForegroundWindow(hwnd)
-                        win32api.AttachThreadInput(cur, fg, False)
-                    else:
-                        win32gui.SetForegroundWindow(hwnd)
-                else:
-                    logger.warning("Window handle no longer valid.")
-            except Exception as e:
-                logger.debug("Could not restore window focus: %s", e)
-
-            self.session = None
-            self.state   = self.STATE_IDLE
-            logger.info("State → IDLE")
-            self._notify_tray()
-
-
-# Toggle between pause and resume
-    def toggle(self):
-        logger.info("[Hotkey] toggle — current state: %s", self.state)
-        try:
-            if self.state == self.STATE_IDLE:
-                self.pause()
-            elif self.state == self.STATE_PAUSED:
-                self.resume()
-        except Exception as e:
-            logger.error("Critical error in toggle: %s", e)
-            self.session = None
-            self.state   = self.STATE_IDLE
-
-
-
-# Hotkey message loop (background thread)
-def hotkey_loop(manager: SessionManager, stop_event: threading.Event):
-    user32 = ctypes.windll.user32
-
-    if not user32.RegisterHotKey(None, HOTKEY_ID, MOD_ALT | MOD_SHIFT, VK_A):
-        logger.error("Failed to register hotkey Alt+Shift+A.")
-        return
-
-    logger.info("Hotkey Alt+Shift+A registered.")
-    msg = ctypes.wintypes.MSG()
-
-    while not stop_event.is_set():
-        ret = user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1)
-        if ret:
-            if msg.message == win32con.WM_HOTKEY and msg.wParam == HOTKEY_ID:
-                manager.toggle()
-            user32.TranslateMessage(ctypes.byref(msg))
-            user32.DispatchMessageW(ctypes.byref(msg))
-        else:
-            time.sleep(0.02)
-
-    user32.UnregisterHotKey(None, HOTKEY_ID)
-    logger.info("Hotkey unregistered.")
-
-# Safety: resume if we exit while paused
-    if manager.state == SessionManager.STATE_PAUSED:
-        logger.info("Auto-resuming before shutdown…")
-        manager.resume()
-
-
-
-# Tray icon(2×2 blue-black checkerboard)
-def _make_icon_image(size: int = 64) -> Image.Image:
-    img  = Image.new("RGB", (size, size))
-    draw = ImageDraw.Draw(img)
-    half = size // 2
-    blue  = "#3B3BF5"
-    black = "#000000"
-    draw.rectangle([0,    0,    half, half], fill=black)
-    draw.rectangle([half, 0,    size, half], fill=blue)
-    draw.rectangle([0,    half, half, size], fill=blue)
-    draw.rectangle([half, half, size, size], fill=black)
-    return img
-
-
-# Build system tray interface
-def build_tray(manager: SessionManager, stop_event: threading.Event) -> pystray.Icon:
-    def on_exit(icon, item):
-        logger.info("Exit requested from tray.")
-        stop_event.set()
-        icon.stop()
-
-    def on_resume(icon, item):
-        if manager.state == SessionManager.STATE_PAUSED:
-            threading.Thread(target=manager.resume, daemon=True,
-                             name="TrayResume").start()
-
-    def resume_enabled(item):
-        return manager.state == SessionManager.STATE_PAUSED
-
-    def exit_enabled(item):
-        return manager.state != SessionManager.STATE_PAUSED
-
-    menu = pystray.Menu(
-        pystray.MenuItem("SnapNap", None, enabled=False),
-        pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Resume", on_resume, enabled=resume_enabled),
-        pystray.MenuItem("Exit", on_exit, enabled=exit_enabled),
-    )
-
-    icon = pystray.Icon(
-        APP_NAME,
-        _make_icon_image(64),
-        "SnapNap — Alt+Shift+A",
-        menu,
-    )
-
-# Make left-click also show the context menu.
-    from pystray._util import win32 as _pw32
-    _WM_LBUTTONUP = 0x0202
-    _WM_RBUTTONUP = 0x0205
-    _original_handler = icon._message_handlers[_pw32.WM_NOTIFY]
-
-    def _patched_notify(wparam, lparam):
-        if lparam == _WM_LBUTTONUP:
-            lparam = _WM_RBUTTONUP
-        return _original_handler(wparam, lparam)
-
-    icon._message_handlers[_pw32.WM_NOTIFY] = _patched_notify
-
-    return icon
-
-
-
-# Entry point
-def main():
-#Elevate if not admin
-    if not is_admin():
-        logger.info("Requesting UAC elevation.")
-        elevate_self()
-
-# Single-instance guard (after elevation so the elevated copy is the one that holds it)
-    _mutex = ensure_single_instance()
-
-# Register Task Scheduler auto-start
-    register_task_scheduler()
-
-# Core objects
-    manager    = SessionManager()
-    stop_event = threading.Event()
-
-# Hotkey thread
-    ht = threading.Thread(target=hotkey_loop, args=(manager, stop_event),
-                          daemon=True, name="HotkeyThread")
-    ht.start()
-
-# Tray icon (main thread — required by pystray on Windows)
-    tray = build_tray(manager, stop_event)
-    manager.tray_icon = tray
-    logger.info("Tray icon starting.")
-
-# First-launch welcome prompt (shown once, after tray is visible)
-    _FIRST_RUN_MARKER = os.path.join(_LOG_DIR, ".launched")
-    is_first_run = not os.path.exists(_FIRST_RUN_MARKER)
-
-    def _on_tray_ready(icon):
-        icon.visible = True
-        if is_first_run:
-            try:
-                open(_FIRST_RUN_MARKER, "w").close()
-            except OSError:
-                pass
-            MB_OK = 0x00000000
-            MB_ICONINFORMATION = 0x00000040
-            MB_SYSTEMMODAL = 0x00001000
-            ctypes.windll.user32.MessageBoxW(
-                None,
-                "Successfully launched.\nPress Alt+Shift+A to pause/resume.",
-                "SnapNap",
-                MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL,
-            )
-
-    tray.run(setup=_on_tray_ready)
-
-# Cleanup
-    stop_event.set()
-    ht.join(timeout=3)
-    logger.info("Application exited.")
-
-
-if __name__ == "__main__":
-    main()
+        ...
