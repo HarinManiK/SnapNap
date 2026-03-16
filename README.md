@@ -47,14 +47,14 @@ Press the hotkey again and the application continues running instantly like noth
 
 ## Benefits
 
-Never close your session
+**Never close your session**
 Pause a game or heavy application and return later exactly where you left off.
 
-Saves battery and power
+**Saves battery and power**
 Paused apps consume 0% CPU/GPU, preventing unnecessary power usage.
 
-Multitask efficiently
-Free your system resources instantly without closing large applications or waiting for them to load again.
+**Multitask efficiently**
+Free system resources instantly without closing large applications.
 
 ---
 
