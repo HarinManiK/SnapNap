@@ -5,7 +5,7 @@
 **Xbox-style Quick Resume for Windows** - instantly pause &amp; resume apps or games with **0% CPU/GPU usage while paused**.
 
 
-## **Why this matters** 
+## **What it solves** 
 
 In windows, when you minimize or pause any apps or games, they still consume CPU and GPU unnecessarily in the background. This causes reduced performance for other applications.
 
