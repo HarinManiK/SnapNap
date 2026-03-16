@@ -5,9 +5,11 @@
 **Xbox-style Quick Resume for Windows** - instantly pause &amp; resume apps or games with **0% CPU/GPU usage while paused**.
 
 
-## **Problem-statement**: 
+## **Why this matters** 
 
-test
+In windows, when you minimize or pause any apps or games, they still consume CPU and GPU unnecessarily in the background. This causes reduced performance for other applications.
+
+---
 
 SnapNap is a small Windows utility that lets you **pause and resume the currently active application instantly** using a simple hotkey(**Alt+Shift+A**).
 
