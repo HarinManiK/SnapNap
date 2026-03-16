@@ -11,6 +11,8 @@ Instead of closing an application, SnapNap temporarily pauses it so it stops usi
 
 Press the hotkey again and the application continues running normally like nothing happened.
 
+(For developers, check out developer-docs.md in docs folder for detailed notes).
+
 ---
 
 ## Demo
