@@ -13,7 +13,7 @@ In windows, when you minimize or pause any apps or games, they still consume CPU
 
 SnapNap is a small Windows utility that lets you **pause and resume the currently active application instantly** using a simple hotkey(**Alt+Shift+A**).
 
-Instead of closing an application, SnapNap temporarily pauses it so it stops using CPU resources while keeping everything exactly as it was.
+Instead of closing an application, SnapNap temporarily pauses it so it stops using CPU resources while keeping everything exactly as it is.
 
 Press the hotkey again and the application continues running instantly like nothing happened.
 
