@@ -44,16 +44,23 @@ When the hotkey is pressed again:
 The program is organized into several logical components.
 
 ```
-WindowDetector
-        │
-        ▼
-ProcessController
-        │
-        ▼
-SessionManager
-        │
-        ▼
-Hotkey Loop + Tray Interface
+ Alt + Shift + A (Hotkey)        System Tray (pystray)
+           │                              │
+           └──────────────┬───────────────┘
+                          ▼
+                    SessionManager
+               (state: IDLE ⇄ PAUSED)
+                          │
+            ┌─────────────┴─────────────┐
+            ▼                           ▼
+      WindowDetector             ProcessController
+  (find foreground window)    (build process tree)
+
+            │                           │
+            ▼                           ▼
+   Win32 window APIs              NT kernel calls
+ (win32gui / win32process)   (NtSuspendProcess /
+                              NtResumeProcess)
 ```
 
 ---
