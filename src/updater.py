@@ -7,7 +7,7 @@ LOCAL_VERSION = "1.1"
 GITHUB_API_URL = (
     "https://api.github.com/repos/HarinManiK/SnapNap/releases/latest"
 )
-_REQUEST_TIMEOUT = 3  # seconds
+_REQUEST_TIMEOUT = 3  
 
 
 
