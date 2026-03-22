@@ -1,13 +1,12 @@
-import os
-import sys
-import ctypes
-import shutil
-import subprocess
-import string
-import threading
-import time
+#  Steps:
+#    1. Delete %APPDATA%\SnapNap folder
+#    2. Delete "SnapNap" scheduled task
+#    3. Locate and delete SnapNap.exe from disk
+
+import os, sys, ctypes, shutil, subprocess, string, threading, time
 import tkinter as tk
 from tkinter import ttk
+from typing import Optional, Set
 
 import psutil
 
@@ -53,17 +52,30 @@ def _own_exe_path() -> str:
     return os.path.abspath(__file__)
 
 
-def is_snapnap_running() -> bool:
+def kill_snapnap_and_get_paths() -> Set[str]:
     my_pid = os.getpid()
-    for proc in psutil.process_iter(["pid", "name"]):
+    paths = set()
+    procs_to_wait = []
+    for proc in psutil.process_iter(["pid", "name", "exe"]):
         try:
             if (proc.info["name"] and
                     proc.info["name"].lower() == EXE_NAME.lower() and
                     proc.info["pid"] != my_pid):
-                return True
+                exe_path = proc.info.get("exe")
+                if exe_path:
+                    paths.add(os.path.normcase(os.path.normpath(exe_path)))
+                proc.kill()
+                procs_to_wait.append(proc)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-    return False
+            
+    if procs_to_wait:
+        try:
+            psutil.wait_procs(procs_to_wait, timeout=3)
+        except psutil.TimeoutExpired:
+            pass
+            
+    return paths
 
 
 
@@ -93,9 +105,20 @@ def step_remove_task() -> bool:
         return False
 
 
-def step_find_and_delete_exe() -> bool:
+def step_find_and_delete_exe(known_paths: Optional[Set[str]] = None) -> bool:
     own = os.path.normcase(os.path.normpath(_own_exe_path()))
     deleted_all = True
+
+    if known_paths:
+        for target in known_paths:
+            if target == own:
+                continue
+            try:
+                if os.path.exists(target):
+                    os.remove(target)
+            except Exception:
+                deleted_all = False
+        return deleted_all
 
     search_roots: list[str] = []
 
@@ -116,7 +139,7 @@ def step_find_and_delete_exe() -> bool:
         try:
             if os.path.isdir(drive):
                 dtype = ctypes.windll.kernel32.GetDriveTypeW(drive)
-                if dtype == 3:  # DRIVE_FIXED
+                if dtype == 3:
                     search_roots.append(drive)
         except Exception:
             continue
@@ -145,16 +168,25 @@ def step_find_and_delete_exe() -> bool:
 
 
 
+def _get_resource_path(relative_path: str) -> str:
+    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+    return os.path.join(base_path, relative_path)
+
+
 class UninstallerApp:
 
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("SnapNap Uninstaller")
+        icon_path = _get_resource_path(os.path.join("assets", "Uninstaller2.ico"))
+        if os.path.exists(icon_path):
+            self.root.iconbitmap(icon_path)
         self.root.geometry("480x300")
         self.root.resizable(False, False)
         self.root.configure(bg=BG_DARK)
         self.root.overrideredirect(False)
 
+        # Center on screen
         self.root.update_idletasks()
         w, h = 480, 300
         x = (self.root.winfo_screenwidth() - w) // 2
@@ -248,22 +280,10 @@ class UninstallerApp:
         self.root.mainloop()
 
     def _run_logic(self):
-        self.root.after(0, self.set_status, "Checking if SnapNap is running...")
+        self.root.after(0, self.set_status, "Stopping SnapNap if running...")
         time.sleep(0.5)
-
-        if is_snapnap_running():
-            self.root.after(0, self.set_status,
-                            "Close SnapNap before uninstalling.", TEXT_WARN)
-            self.root.after(0, self.set_detail, "")
-            self.root.after(0, self.progress.pack_forget)
-            for i in range(5, 0, -1):
-                self.root.after(0, self.result_label.config,
-                                {"text": f"Closing in {i}s...", "fg": TEXT_WARN})
-                self.root.after(0, self.result_label.pack,
-                                {"pady": (10, 0)})
-                time.sleep(1)
-            self.root.after(0, self.root.destroy)
-            return
+        
+        known_paths = kill_snapnap_and_get_paths()
 
         self.root.after(0, self.set_status, "Uninstalling...")
         self.root.after(0, self.set_detail, "[1/3]  Deleting AppData folder...")
@@ -279,10 +299,13 @@ class UninstallerApp:
         self.root.after(0, self.set_progress, 55)
         time.sleep(0.3)
 
-        self.root.after(0, self.set_detail,
-                        "[3/3]  Searching for SnapNap.exe — this may take a moment...")
+        if known_paths:
+            self.root.after(0, self.set_detail, "[3/3]  Deleting SnapNap.exe from known location...")
+        else:
+            self.root.after(0, self.set_detail,
+                            "[3/3]  Searching for SnapNap.exe — this may take a moment...")
         time.sleep(0.3)
-        s3 = step_find_and_delete_exe()
+        s3 = step_find_and_delete_exe(known_paths)
         self.root.after(0, self.set_progress, 100)
         time.sleep(0.3)
 
