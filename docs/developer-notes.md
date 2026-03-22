@@ -336,10 +336,13 @@ Logs are stored at:
 
 The logging system records:
 
-* suspension events
-* resume events
-* process safety checks
-* errors
+* suspension/resume lifecycle with timings
+* process tree construction details
+* safety checks and skips
+* NT API success/failure (per PID)
+* foreground/window handling steps
+* startup diagnostics (OS, CPU, user, Python)
+* errors and edge-case warnings
 
 ---
 
