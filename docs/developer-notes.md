@@ -195,6 +195,25 @@ Resume order is reversed.
 
 ---
 
+# Fullscreen Handling
+
+Before suspension, SnapNap ensures fullscreen apps release the display.
+
+Steps:
+
+1. Force minimize (SW_FORCEMINIMIZE)
+2. Shift focus to shell window
+3. Wait for IsIconic confirmation
+4. Wait for foreground release
+5. Add buffer delay for GPU/framebuffer
+
+This prevents:
+
+* black screen issues
+* stuck exclusive fullscreen states
+
+---
+
 # Session Manager
 
 The `SessionManager` controls application state.
