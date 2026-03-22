@@ -51,7 +51,7 @@ Press the hotkey again and the application continues running instantly like noth
 
 Pause a game or heavy application and return later exactly where you left off.
 
-**Don't have to worry about the temperature**
+**Don't have to worry about the temperatures**
 
 **Saves battery and power**
 
