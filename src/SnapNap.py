@@ -3,12 +3,14 @@
 # Licensed under the SnapNap Personal Use License (SPUL-1.0)
 # See LICENSE file in the repository for full license text.
 
-import os, sys, time, ctypes, ctypes.wintypes, logging, threading, subprocess, psutil, win32gui, win32process, win32api, win32con, pystray
+import os, sys, time, ctypes, ctypes.wintypes, logging, logging.handlers, threading, subprocess, psutil, platform, win32gui, win32process, win32api, win32con, pystray
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
-from PIL import Image, ImageDraw
+from PIL import Image
 
-# Setting up the logs folder.
+
+# Logs setup
+
 _APPDATA = os.environ.get("APPDATA", os.path.expanduser("~"))
 _LOG_DIR = os.path.join(_APPDATA, APP_NAME := "SnapNap")
 os.makedirs(_LOG_DIR, exist_ok=True)
@@ -17,21 +19,20 @@ LOG_PATH = os.path.join(_LOG_DIR, "suspend_manager.log")
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - [%(levelname)s] - %(message)s",
-    handlers=[logging.FileHandler(LOG_PATH, encoding="utf-8")],
+    handlers=[logging.handlers.RotatingFileHandler(LOG_PATH, maxBytes=20*1024*1024, backupCount=5, encoding="utf-8")],
 )
 logger = logging.getLogger("SnapNap")
 
 
+# Hotkey
 
-# Hotkey setup
 HOTKEY_ID  = 1
 MOD_ALT    = 0x0001
-MOD_SHIFT  = 0x0004
-VK_A       = 0x41
+VK_J       = 0x4A
 
 
+# Protected processes(let's not mess with OS lol)
 
-# Protected processes(lets not mess with OS lol)
 PROTECTED_PROCESSES = {
     "explorer.exe", "dwm.exe", "csrss.exe", "winlogon.exe",
     "services.exe", "lsass.exe", "smss.exe", "svchost.exe",
@@ -42,8 +43,8 @@ PROTECTED_PID_CEIL = 1000
 DESKTOP_CLASSES = {"Shell_TrayWnd", "Progman", "WorkerW", "Shell_SecondaryTrayWnd"}
 
 
+# NT/kernel32 function pointers
 
-# ntdll function pointers
 _ntdll  = ctypes.WinDLL("ntdll", use_last_error=True)
 _k32    = ctypes.windll.kernel32
 
@@ -61,28 +62,39 @@ OpenProcess  = _k32.OpenProcess
 CloseHandle  = _k32.CloseHandle
 
 
+# Single instance guard
 
-# Prevent multiple instances using a global mutex
 _ERROR_ALREADY_EXISTS = 183
 
 def ensure_single_instance():
     mutex = _k32.CreateMutexW(None, False, f"Global\\{APP_NAME}_Mutex")
-    if ctypes.GetLastError() == _ERROR_ALREADY_EXISTS:
+    err   = ctypes.GetLastError()
+    if err == _ERROR_ALREADY_EXISTS:
         logger.info("Another instance is already running. Exiting.")
         sys.exit(0)
+    if not mutex:
+        logger.error(
+            "CreateMutexW returned NULL (error %d) — could not create single-instance guard. "
+            "Continuing without mutex protection.", err,
+        )
+    else:
+        logger.info("Single-instance mutex acquired (error code at creation: %d).", err)
     return mutex
 
 
+# Admin/UAC setup
 
-# Privilege check and UAC elevation
 def is_admin() -> bool:
     try:
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except Exception:
+        result = bool(ctypes.windll.shell32.IsUserAnAdmin())
+        logger.info("Admin check: %s.", "elevated" if result else "not elevated")
+        return result
+    except Exception as e:
+        logger.warning("Admin check raised an exception: %s", e)
         return False
 
-
 def elevate_self():
+    logger.info("Requesting UAC elevation via ShellExecuteW.")
     if getattr(sys, "frozen", False):
         exe    = sys.executable
         params = ""
@@ -93,8 +105,8 @@ def elevate_self():
     sys.exit(0)
 
 
+# Task Scheduler setup
 
-# Setting up the task scheduler entry that runs at startup with admin rights.
 def register_task_scheduler():
     if getattr(sys, "frozen", False):
         exe_path = sys.executable
@@ -104,6 +116,7 @@ def register_task_scheduler():
         script   = os.path.abspath(__file__)
         cmd = f'"{exe_path}" "{script}"'
 
+    logger.info("Registering Task Scheduler entry → %s", cmd)
     try:
         result = subprocess.run(
             [
@@ -119,9 +132,9 @@ def register_task_scheduler():
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         if result.returncode == 0:
-            logger.info("Task Scheduler entry created/updated: %s", cmd)
+            logger.info("Task Scheduler entry created/updated successfully.")
 
-            subprocess.run([
+            ps_result = subprocess.run([
                 "powershell",
                 "-WindowStyle", "Hidden",
                 "-Command",
@@ -131,82 +144,113 @@ def register_task_scheduler():
                 "Set-ScheduledTask $t"
             ], capture_output=True, timeout=10,
                creationflags=subprocess.CREATE_NO_WINDOW)
+
+            if ps_result.returncode == 0:
+                logger.info("Task Scheduler battery-run settings patched.")
+            else:
+                logger.warning("Battery-run patch failed (non-fatal): %s", ps_result.stderr.strip())
         else:
-            logger.warning("schtasks stderr: %s", result.stderr.strip())
+            logger.warning("schtasks /Create failed (rc=%d): %s", result.returncode, result.stderr.strip())
+    except subprocess.TimeoutExpired:
+        logger.warning("schtasks timed out — skipping Task Scheduler registration.")
     except Exception as e:
         logger.warning("Could not register Task Scheduler entry: %s", e)
 
 
+# Low-level suspend/resume functions via NT APIs
 
-# Suspend function
 def _nt_suspend(pid: int) -> bool:
     handle = OpenProcess(PROCESS_SUSPEND_RESUME, False, pid)
     if not handle:
-        logger.warning("OpenProcess failed for PID %d (error %d)", pid, ctypes.GetLastError())
+        logger.warning("OpenProcess failed for PID %d (error %d).", pid, ctypes.GetLastError())
         return False
     try:
         status = NtSuspendProcess(handle)
         if status != 0:
-            logger.warning("NtSuspendProcess failed for PID %d (NTSTATUS 0x%08X)", pid, status & 0xFFFFFFFF)
+            logger.warning("NtSuspendProcess failed for PID %d (NTSTATUS 0x%08X).", pid, status & 0xFFFFFFFF)
             return False
+        logger.debug("NtSuspendProcess succeeded for PID %d.", pid)
         return True
     finally:
         CloseHandle(handle)
 
 
-
-# Resume function
 def _nt_resume(pid: int) -> bool:
     handle = OpenProcess(PROCESS_SUSPEND_RESUME, False, pid)
     if not handle:
-        logger.warning("OpenProcess failed for PID %d (error %d)", pid, ctypes.GetLastError())
+        logger.warning("OpenProcess failed for PID %d (error %d).", pid, ctypes.GetLastError())
         return False
     try:
         status = NtResumeProcess(handle)
         if status != 0:
-            logger.warning("NtResumeProcess failed for PID %d (NTSTATUS 0x%08X)", pid, status & 0xFFFFFFFF)
+            logger.warning("NtResumeProcess failed for PID %d (NTSTATUS 0x%08X).", pid, status & 0xFFFFFFFF)
             return False
+        logger.debug("NtResumeProcess succeeded for PID %d.", pid)
         return True
     finally:
         CloseHandle(handle)
 
 
+# Data model
 
 @dataclass
 class AppSession:
     hwnd: int
     pid: int
-    # Store (pid, name) tuples — not live Process objects (which go stale)
+    # Store (pid, name) tuples
     suspended_pids: List[Tuple[int, str]] = field(default_factory=list)
 
 
+# Window detection
 
 class WindowDetector:
+
     @staticmethod
     def get_foreground_window() -> Optional[int]:
         hwnd = win32gui.GetForegroundWindow()
-        if not hwnd or not win32gui.IsWindowVisible(hwnd):
+
+        if not hwnd:
+            logger.debug("GetForegroundWindow returned NULL.")
             return None
 
-        # Reject desktop / taskbar
+        if not win32gui.IsWindowVisible(hwnd):
+            logger.debug("HWND 0x%X is not visible — skipping.", hwnd)
+            return None
+
+
+# Reject desktop/taskbar
+
         try:
             cls_name = win32gui.GetClassName(hwnd)
             if cls_name in DESKTOP_CLASSES:
+                logger.info("HWND 0x%X belongs to desktop/taskbar class '%s' — skipping.", hwnd, cls_name)
                 return None
-        except Exception:
+        except Exception as e:
+            logger.warning("GetClassName failed for HWND 0x%X: %s", hwnd, e)
             return None
 
-        # Reject our own process
+
+# Reject our own process
+
         try:
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
             if pid == os.getpid():
+                logger.info("HWND 0x%X belongs to SnapNap itself — skipping.", hwnd)
                 return None
-        except Exception:
+        except Exception as e:
+            logger.warning("GetWindowThreadProcessId failed for HWND 0x%X: %s", hwnd, e)
             return None
 
+        try:
+            title = win32gui.GetWindowText(hwnd)
+        except Exception:
+            title = "<unknown>"
+
+        logger.info("Foreground window detected: HWND=0x%X, PID=%d, title='%s'.", hwnd, pid, title)
         return hwnd
 
 
+# Process safety and tree operations
 
 class ProcessController:
 
@@ -219,64 +263,105 @@ class ProcessController:
         return True
 
 
-# Return list of (pid, name) tuples in root first, children after (BFS order) and include only safe to suspend entries.
+# Returns (pid, name) tuples: root first, children after (BFS order)
+# Only includes processes that are safe to suspend
+
     @staticmethod
     def get_process_tree(root_pid: int) -> List[Tuple[int, str]]:
+        logger.info("Building process tree for root PID %d.", root_pid)
+        _t0 = time.perf_counter()
         try:
-            root = psutil.Process(root_pid)
+            root      = psutil.Process(root_pid)
             root_name = root.name()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+            logger.warning("Cannot access root PID %d: %s", root_pid, e)
             return []
 
         if not ProcessController.is_safe(root_pid, root_name):
-            logger.warning("Root %s (PID %d) is protected.", root_name, root_pid)
+            logger.warning("Root process '%s' (PID %d) is protected — aborting tree walk.", root_name, root_pid)
             return []
 
         tree: List[Tuple[int, str]] = [(root_pid, root_name)]
 
         try:
             children = root.children(recursive=True)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+            logger.warning("Could not enumerate children of PID %d: %s", root_pid, e)
             children = []
 
+        skipped = 0
         for child in children:
             try:
                 cname = child.name()
+                logger.debug("Examining child: '%s' (PID %d).", cname, child.pid)
                 if ProcessController.is_safe(child.pid, cname):
                     tree.append((child.pid, cname))
                 else:
-                    logger.warning("Skipping protected child: %s (PID %d)", cname, child.pid)
+                    logger.warning("Skipping protected child: '%s' (PID %d).", cname, child.pid)
+                    skipped += 1
             except (psutil.NoSuchProcess, psutil.AccessDenied):
+                logger.debug("Child PID %d vanished or denied during tree walk — skipping.", child.pid)
+                skipped += 1
                 continue
 
+        elapsed = time.perf_counter() - _t0
+        logger.info(
+            "Process tree built in %.3f s: %d process(es) queued, %d skipped. Tree: %s",
+            elapsed, len(tree), skipped,
+            [(name, pid) for pid, name in tree],
+        )
         return tree
 
 
 # Suspend deepest children first, root last
+
     @staticmethod
     def suspend_tree(tree: List[Tuple[int, str]]) -> List[Tuple[int, str]]:
+        logger.info("Suspending %d process(es) (children-first order).", len(tree))
+        _t0 = time.perf_counter()
         actually_suspended: List[Tuple[int, str]] = []
+        failed: List[Tuple[int, str]] = []
         for pid, name in reversed(tree):
             if _nt_suspend(pid):
-                logger.info("Suspended: %s (PID %d)", name, pid)
+                logger.info("  ✓ Suspended '%s' (PID %d).", name, pid)
                 actually_suspended.append((pid, name))
             else:
-                logger.warning("Failed to suspend: %s (PID %d)", name, pid)
+                logger.warning("  ✗ FINAL FAILURE — could not suspend '%s' (PID %d). It will keep running.", name, pid)
+                failed.append((pid, name))
+        elapsed = time.perf_counter() - _t0
+        logger.info(
+            "Suspend pass complete in %.3f s: %d/%d succeeded, %d failed.%s",
+            elapsed, len(actually_suspended), len(tree), len(failed),
+            f" Still-running: {[(n, p) for p, n in failed]}" if failed else "",
+        )
         return actually_suspended
 
 
-# Resume root first, children last(reverse of suspend order)
+# Resume root first, children last (reverse of suspend order)
+
     @staticmethod
     def resume_tree(suspended_pids: List[Tuple[int, str]]):
+        logger.info("Resuming %d process(es) (root-first order).", len(suspended_pids))
+        _t0 = time.perf_counter()
+        success = 0
+        failed: List[Tuple[int, str]] = []
         for pid, name in reversed(suspended_pids):
             if _nt_resume(pid):
-                logger.info("Resumed: %s (PID %d)", name, pid)
+                logger.info("  ✓ Resumed '%s' (PID %d).", name, pid)
+                success += 1
             else:
-                logger.warning("Failed to resume: %s (PID %d)", name, pid)
+                logger.warning("  ✗ FINAL FAILURE — could not resume '%s' (PID %d). Process may remain frozen.", name, pid)
+                failed.append((pid, name))
+        elapsed = time.perf_counter() - _t0
+        logger.info(
+            "Resume pass complete in %.3f s: %d/%d succeeded, %d failed.%s",
+            elapsed, success, len(suspended_pids), len(failed),
+            f" Still-frozen: {[(n, p) for p, n in failed]}" if failed else "",
+        )
 
 
+# Session Manager(idle to paused and vice versa state machine)
 
-# Session Manager: idle to paused and vice versa. Single session only
 class SessionManager:
 
     STATE_IDLE   = "IDLE"
@@ -287,9 +372,11 @@ class SessionManager:
         self.session: Optional[AppSession] = None
         self._lock   = threading.Lock()
         self.tray_icon: Optional[pystray.Icon] = None
+        logger.info("SessionManager initialised (state: %s).", self.STATE_IDLE)
 
 
 # Tell pystray to re-evaluate menu item enabled/checked states
+
     def _notify_tray(self):
         try:
             if self.tray_icon is not None:
@@ -298,22 +385,31 @@ class SessionManager:
             pass
 
 
-# Pause session
+# Pause function
+
     def pause(self):
         with self._lock:
             if self.state != self.STATE_IDLE:
-                logger.info("Already in state %s — ignoring pause request.", self.state)
+                logger.info("Pause requested but state is '%s' — ignoring.", self.state)
                 return
 
+            _op_start = time.perf_counter()
+            logger.info("Pause initiated — probing foreground window.")
+
+
+# Poll briefly for a valid window
+
             hwnd = None
-            for _ in range(20):
+            for attempt in range(20):
+                logger.debug("Window probe attempt %d/20.", attempt + 1)
                 hwnd = WindowDetector.get_foreground_window()
                 if hwnd:
+                    logger.info("Foreground window found on attempt %d/20.", attempt + 1)
                     break
                 time.sleep(0.05)
 
             if not hwnd:
-                logger.info("No suspendable foreground window detected.")
+                logger.info("No suspendable foreground window found after 20 attempts — aborting pause.")
                 return
 
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
@@ -323,106 +419,232 @@ class SessionManager:
                 proc_name = "Unknown"
 
             if not ProcessController.is_safe(pid, proc_name):
-                logger.warning("Safety block: cannot suspend %s (PID %d)", proc_name, pid)
+                logger.warning("Safety block: '%s' (PID %d) is a protected process.", proc_name, pid)
                 return
 
-            logger.info("Suspending: %s (PID %d)", proc_name, pid)
+            logger.info("Target confirmed: '%s' (PID %d, HWND 0x%X).", proc_name, pid, hwnd)
 
-            win32gui.PostMessage(hwnd, win32con.WM_SYSCOMMAND, win32con.SC_MINIMIZE, 0)
-            time.sleep(0.200)
+
+# Force the game out of fullscreen before suspending
+# SW_FORCEMINIMIZE crosses thread boundaries and works on exclusive DX windows
+
+            logger.info("Force-minimising window (SW_FORCEMINIMIZE) and waiting for IsIconic confirmation.")
+            time.sleep(0.01)
+            _user32 = ctypes.windll.user32
+            _user32.ShowWindow(hwnd, 11)  # SW_FORCEMINIMIZE
+
+
+# Steal foreground focus away so exclusive fullscreen games release the display
+# GetShellWindow() (taskbar/Explorer) is a more reliable steal target than
+# raw desktop on DX11/DX12 titles — always present, always in user32
+
+            _shell = _user32.GetShellWindow()
+            if _shell:
+                _user32.SetForegroundWindow(_shell)
+                logger.info("Foreground stolen to shell window (HWND=0x%X).", _shell)
+            else:
+                logger.warning("GetShellWindow returned NULL — skipping foreground steal.")
+
+
+# Step-1: wait for OS to mark the window as minimized (up to 3 s)
+
+            _minimised = False
+            for _tick in range(60):
+                if _user32.IsIconic(hwnd):
+                    _minimised = True
+                    logger.info("IsIconic confirmed after %d ms.", (_tick + 1) * 50)
+                    break
+                time.sleep(0.050)
+
+            if not _minimised:
+                logger.warning(
+                    "Window HWND=0x%X did not minimise within 3 s — "
+                    "game may still hold the display. Proceeding anyway.", hwnd,
+                )
+            else:
+
+
+# Step-2: wait for foreground to leave the game window
+# IsIconic only means the OS window is minimized
+# GetForegroundWindow() != hwnd means DXGI has actually release
+# the exclusive swap chain — the compositor has taken back the display
+
+                _fg_released = False
+                for _tick in range(60):  # up to 3 more seconds
+                    if _user32.GetForegroundWindow() != hwnd:
+                        _fg_released = True
+                        logger.info("Foreground released from game after %d ms — DXGI swap chain free.", (_tick + 1) * 50)
+                        break
+                    time.sleep(0.050)
+
+                if not _fg_released:
+                    logger.warning(
+                        "Game HWND=0x%X still holds foreground after 3 s — "
+                        "DXGI may not have released. Black screen risk remains.", hwnd,
+                    )
+
+
+# Step-3: settling sleep so the GPU framebuffer fully drains
+
+                time.sleep(1.000)
 
             tree = ProcessController.get_process_tree(pid)
             if not tree:
-                logger.warning("Empty process tree — aborting.")
+                logger.warning("Empty process tree — aborting pause.")
                 return
 
+            logger.info(
+                "STATE SNAPSHOT (pre-suspend): state=%s, target='%s' PID=%d, HWND=0x%X, tree_size=%d.",
+                self.state, proc_name, pid, hwnd, len(tree),
+            )
             actually_suspended = ProcessController.suspend_tree(tree)
             if not actually_suspended:
-                logger.warning("No processes were suspended.")
+                logger.warning("No processes were successfully suspended — session not created.")
                 return
 
             self.session = AppSession(hwnd=hwnd, pid=pid,
                                       suspended_pids=actually_suspended)
             self.state = self.STATE_PAUSED
-            logger.info("State → PAUSED  (%d processes)", len(actually_suspended))
+            logger.info(
+                "State → PAUSED. Session: root='%s' PID=%d, total suspended=%d. "
+                "Total pause op took %.3f s.",
+                proc_name, pid, len(actually_suspended),
+                time.perf_counter() - _op_start,
+            )
             self._notify_tray()
 
 
-# Resume session
+# Resume function
+
     def resume(self):
         with self._lock:
             if self.state != self.STATE_PAUSED or not self.session:
-                self.state = self.STATE_IDLE
+                logger.warning(
+                    "Resume called but state is '%s' (session=%s) — resetting to IDLE.",
+                    self.state, "present" if self.session else "absent",
+                )
+                self.state   = self.STATE_IDLE
                 self.session = None
                 return
 
-            logger.info("Resuming session (root PID %d)…", self.session.pid)
+            _op_start = time.perf_counter()
+            logger.info(
+                "STATE SNAPSHOT (pre-resume): state=%s, root PID=%d, HWND=0x%X, suspended_count=%d, pids=%s.",
+                self.state, self.session.pid, self.session.hwnd,
+                len(self.session.suspended_pids),
+                [(n, p) for p, n in self.session.suspended_pids],
+            )
+            logger.info(
+                "Resume initiated for session: root PID=%d, %d process(es) to resume.",
+                self.session.pid, len(self.session.suspended_pids),
+            )
 
             ProcessController.resume_tree(self.session.suspended_pids)
+            _root_pid = self.session.pid
+            _t_wake = time.perf_counter()
+            while (time.perf_counter() - _t_wake) < 0.500:
+                try:
+                    if psutil.Process(_root_pid).status() != psutil.STATUS_STOPPED:
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    break
+                time.sleep(0.005)
+            time.sleep(0.010)
 
-            time.sleep(0.200)
+
+# Restore the window and return focus
 
             try:
                 hwnd = self.session.hwnd
                 if win32gui.IsWindow(hwnd):
-                    win32gui.PostMessage(hwnd, win32con.WM_SYSCOMMAND,
-                                         win32con.SC_RESTORE, 0)
-                    time.sleep(0.100)
+                    logger.info("Restoring window HWND=0x%X.", hwnd)
 
-                    user32 = ctypes.windll.user32
+                    win32gui.PostMessage(hwnd, win32con.WM_SYSCOMMAND,
+                                        win32con.SC_RESTORE, 0)
+                    _t_restore = time.perf_counter()
+                    while (time.perf_counter() - _t_restore) < 0.300:
+                        try:
+                            if not ctypes.windll.user32.IsIconic(hwnd):
+                                break
+                        except Exception:
+                            break
+                        time.sleep(0.005)
+                    time.sleep(0.010)
+
+# Alt key nudge(helps Windows reassign foreground rights)
+
+                    user32  = ctypes.windll.user32
                     VK_MENU = 0x12
                     KEYEVENTF_KEYUP = 0x0002
-                    user32.keybd_event(VK_MENU, 0, 0, 0)           # Alt down
-                    user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)  # Alt up
+                    user32.keybd_event(VK_MENU, 0, 0, 0)
+                    user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
 
                     cur = win32api.GetCurrentThreadId()
                     fg, _ = win32process.GetWindowThreadProcessId(hwnd)
                     if cur != fg:
-                        win32api.AttachThreadInput(cur, fg, True)
+                        attached = ctypes.windll.user32.AttachThreadInput(cur, fg, True)
+                        if not attached:
+                            logger.warning(
+                                "AttachThreadInput(attach) failed for thread pair (%d, %d) — "
+                                "SetForegroundWindow may not work.", cur, fg,
+                            )
                         win32gui.SetForegroundWindow(hwnd)
-                        win32api.AttachThreadInput(cur, fg, False)
+                        if attached:
+                            ctypes.windll.user32.AttachThreadInput(cur, fg, False)
                     else:
                         win32gui.SetForegroundWindow(hwnd)
+
+                    logger.info("Focus returned to HWND=0x%X.", hwnd)
                 else:
-                    logger.warning("Window handle no longer valid.")
+                    logger.warning("HWND=0x%X is no longer a valid window — skipping restore.", hwnd)
             except Exception as e:
-                logger.debug("Could not restore window focus: %s", e)
+                logger.warning("Could not restore window focus: %s", e)
 
             self.session = None
             self.state   = self.STATE_IDLE
-            logger.info("State → IDLE")
+            logger.info("State → IDLE. Total resume op took %.3f s.", time.perf_counter() - _op_start)
             self._notify_tray()
 
 
-# Toggle handler
+# Toggle setup
+
     def toggle(self):
-        logger.info("[Hotkey] toggle — current state: %s", self.state)
+        logger.info("[Hotkey] Toggle pressed — current state: %s.", self.state)
         try:
             if self.state == self.STATE_IDLE:
                 self.pause()
             elif self.state == self.STATE_PAUSED:
                 self.resume()
         except Exception as e:
-            logger.error("Critical error in toggle: %s", e)
+            logger.error("Unhandled exception in toggle: %s", e, exc_info=True)
             self.session = None
             self.state   = self.STATE_IDLE
+            logger.info("State force-reset → IDLE after error.")
 
 
+# Hotkey listener loop
 
 def hotkey_loop(manager: SessionManager, stop_event: threading.Event):
     user32 = ctypes.windll.user32
 
-    if not user32.RegisterHotKey(None, HOTKEY_ID, MOD_ALT | MOD_SHIFT, VK_A):
-        logger.error("Failed to register hotkey Alt+Shift+A.")
+    logger.info("Hotkey thread started.")
+
+    if not user32.RegisterHotKey(None, HOTKEY_ID, MOD_ALT, VK_J):
+        logger.error(
+            "Failed to register hotkey Alt+J (error %d). "
+            "Another application may be using the same combination.",
+            ctypes.GetLastError(),
+        )
         return
 
-    logger.info("Hotkey Alt+Shift+A registered.")
-    msg = ctypes.wintypes.MSG()
+    logger.info("Hotkey Alt+J registered successfully (ID=%d).", HOTKEY_ID)
 
+    msg = ctypes.wintypes.MSG()
     while not stop_event.is_set():
         ret = user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1)
         if ret:
             if msg.message == win32con.WM_HOTKEY and msg.wParam == HOTKEY_ID:
+                logger.info("[Hotkey] WM_HOTKEY received.")
                 manager.toggle()
             user32.TranslateMessage(ctypes.byref(msg))
             user32.DispatchMessageW(ctypes.byref(msg))
@@ -430,53 +652,53 @@ def hotkey_loop(manager: SessionManager, stop_event: threading.Event):
             time.sleep(0.02)
 
     user32.UnregisterHotKey(None, HOTKEY_ID)
-    logger.info("Hotkey unregistered.")
+    logger.info("Hotkey Alt+J unregistered.")
 
     if manager.state == SessionManager.STATE_PAUSED:
-        logger.info("Auto-resuming before shutdown…")
+        logger.info("Shutdown detected with active session — auto-resuming before exit.")
         manager.resume()
 
+    logger.info("Hotkey thread exiting.")
 
+
+# System tray icon
 
 def _get_icon_path() -> str | None:
     if getattr(sys, "frozen", False):
-        base = sys._MEIPASS 
+        base = sys._MEIPASS
     else:
         base = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(base, "assets", "snapnap.ico")
-    return path if os.path.isfile(path) else None
+    path = os.path.join(base, "assets", "SnapNap2.ico")
+    found = os.path.isfile(path)
+    logger.info("Icon asset %s: %s", "found" if found else "not found", path)
+    return path if found else None
 
-
-def _make_icon_image(size: int = 64) -> Image.Image:
+def _make_icon_image() -> Image.Image:
     ico_path = _get_icon_path()
-    if ico_path:
-        try:
-            return Image.open(ico_path)
-        except Exception:
-            pass
-    img  = Image.new("RGB", (size, size))
-    draw = ImageDraw.Draw(img)
-    half = size // 2
-    blue  = "#3B3BF5"
-    black = "#000000"
-    draw.rectangle([0,    0,    half, half], fill=black) 
-    draw.rectangle([half, 0,    size, half], fill=blue)  
-    draw.rectangle([0,    half, half, size], fill=blue)  
-    draw.rectangle([half, half, size, size], fill=black) 
+    if not ico_path:
+        raise FileNotFoundError(
+            "SnapNap2.ico not found in assets/ — cannot start without icon."
+        )
+    img = Image.open(ico_path)
+    logger.info("Loaded tray icon from: %s", ico_path)
     return img
 
 
 def build_tray(manager: SessionManager, stop_event: threading.Event) -> pystray.Icon:
+    logger.info("Building tray icon.")
 
     def on_exit(icon, item):
-        logger.info("Exit requested from tray.")
+        logger.info("[Tray] Exit clicked.")
         stop_event.set()
         icon.stop()
 
     def on_resume(icon, item):
         if manager.state == SessionManager.STATE_PAUSED:
+            logger.info("[Tray] Resume clicked.")
             threading.Thread(target=manager.resume, daemon=True,
                              name="TrayResume").start()
+        else:
+            logger.info("[Tray] Resume clicked but state is '%s' — ignoring.", manager.state)
 
     def resume_enabled(item):
         return manager.state == SessionManager.STATE_PAUSED
@@ -488,16 +710,17 @@ def build_tray(manager: SessionManager, stop_event: threading.Event) -> pystray.
         pystray.MenuItem("SnapNap", None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Resume", on_resume, enabled=resume_enabled),
-        pystray.MenuItem("Exit", on_exit, enabled=exit_enabled),
+        pystray.MenuItem("Exit",   on_exit,   enabled=exit_enabled),
     )
 
     icon = pystray.Icon(
         APP_NAME,
-        _make_icon_image(64),
-        "SnapNap — Alt+Shift+A",
+        _make_icon_image(),
+        "SnapNap — Alt+J",
         menu,
     )
 
+# Patch: treat left-click as right-click
     from pystray._util import win32 as _pw32
     _WM_LBUTTONUP = 0x0202
     _WM_RBUTTONUP = 0x0205
@@ -509,59 +732,82 @@ def build_tray(manager: SessionManager, stop_event: threading.Event) -> pystray.
         return _original_handler(wparam, lparam)
 
     icon._message_handlers[_pw32.WM_NOTIFY] = _patched_notify
+    logger.info("Tray icon built. Left-click → right-click patch applied.")
 
     return icon
 
 
-
 def main():
+    logger.info("=" * 60)
+    logger.info("SnapNap starting up (PID %d).", os.getpid())
+    logger.info("Log file: %s", LOG_PATH)
+    logger.info("Python : %s | Frozen: %s", sys.version.split()[0], getattr(sys, "frozen", False))
+    logger.info("OS     : %s", platform.platform())
+    logger.info("CPU    : %d logical core(s)", os.cpu_count() or 0)
+    logger.info("User   : %s", os.environ.get("USERNAME", "<unknown>"))
+    logger.info("=" * 60)
+
     if not is_admin():
-        logger.info("Requesting UAC elevation.")
         elevate_self()
 
     _mutex = ensure_single_instance()
 
     register_task_scheduler()
 
+    logger.info("Running update check.")
     from updater import run_update_check
     run_update_check()
+    logger.info("Update check returned.")
 
     manager    = SessionManager()
     stop_event = threading.Event()
 
+    logger.info("Starting hotkey listener thread.")
     ht = threading.Thread(target=hotkey_loop, args=(manager, stop_event),
                           daemon=True, name="HotkeyThread")
     ht.start()
 
     tray = build_tray(manager, stop_event)
     manager.tray_icon = tray
-    logger.info("Tray icon starting.")
 
     _FIRST_RUN_MARKER = os.path.join(_LOG_DIR, ".launched")
-    is_first_run = not os.path.exists(_FIRST_RUN_MARKER)
+    is_first_run      = not os.path.exists(_FIRST_RUN_MARKER)
+    logger.info("First-run marker %s.", "absent — showing welcome dialog" if is_first_run else "present — skipping welcome dialog")
 
     def _on_tray_ready(icon):
         icon.visible = True
+        logger.info("Tray icon is now visible.")
         if is_first_run:
             try:
                 open(_FIRST_RUN_MARKER, "w").close()
-            except OSError:
-                pass
-            MB_OK = 0x00000000
+                logger.info("First-run marker created at %s.", _FIRST_RUN_MARKER)
+            except OSError as e:
+                logger.warning("Could not create first-run marker: %s", e)
+            MB_OK             = 0x00000000
             MB_ICONINFORMATION = 0x00000040
-            MB_SYSTEMMODAL = 0x00001000
+            MB_SYSTEMMODAL    = 0x00001000
             ctypes.windll.user32.MessageBoxW(
                 None,
-                "Successfully launched.\nPress Alt+Shift+A to pause/resume.",
+                "Successfully launched.\nPress Alt+J to pause/resume.",
                 "SnapNap",
                 MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL,
             )
+            logger.info("Welcome dialog dismissed.")
 
+    logger.info("Handing control to pystray run loop.")
     tray.run(setup=_on_tray_ready)
 
+    logger.info("Tray run loop exited — signalling hotkey thread to stop.")
     stop_event.set()
     ht.join(timeout=3)
-    logger.info("Application exited.")
+
+    if ht.is_alive():
+        logger.warning("Hotkey thread did not exit within 3 s — continuing anyway.")
+    else:
+        logger.info("Hotkey thread joined cleanly.")
+
+    logger.info("SnapNap exited cleanly.")
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":
