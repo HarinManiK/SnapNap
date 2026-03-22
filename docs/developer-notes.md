@@ -229,21 +229,17 @@ This allows SnapNap to restore:
 
 Windows restricts applications from stealing focus.
 
-SnapNap bypasses this restriction by:
+SnapNap restores focus using:
 
-1. Simulating an `Alt` key press.
-2. Using `AttachThreadInput`.
-3. Calling `SetForegroundWindow`.
+1. Restore window via WM_SYSCOMMAND
+2. Simulate Alt key press
+3. Use AttachThreadInput if required
+4. Call SetForegroundWindow
 
-Sequence:
+Additional safeguards:
 
-```
-keybd_event(VK_MENU)
-AttachThreadInput
-SetForegroundWindow
-```
-
-This ensures the resumed application becomes the foreground window.
+* waits for window un-minimize confirmation
+* handles cross-thread focus issues
 
 ---
 
