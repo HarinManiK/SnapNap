@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## version 1.2
+## version 1.2 - March 22 2026
 
 ### Improvements
 - Enhanced logging system:
@@ -22,14 +22,14 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## version 1.1
+## version 1.1 - March 18 2026
 
 Integrated an update checker that fetches the latest release from GitHub and notifies the user if a newer version is available.
 
 ---
 
 
-## version 1.0 - Initial Release
+## version 1.0 - March 16 2026 - Initial Release 
 
 Initial release of SnapNap.
 
