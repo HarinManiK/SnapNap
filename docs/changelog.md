@@ -15,7 +15,6 @@ All notable changes to this project will be documented in this file.
 - More stable suspend/resume flow with better timing and state handling
 - Improved window detection and focus restoration reliability
 
----
 
 ### Changes
 - Hotkey updated: **Alt + Shift + A** → **Alt + J**
