@@ -3,11 +3,11 @@ import json, logging, os, re, sys, urllib.request, webbrowser
 logger = logging.getLogger("SnapNap")
 
 
-LOCAL_VERSION = "1.1"
+LOCAL_VERSION = "1.2"
 GITHUB_API_URL = (
     "https://api.github.com/repos/HarinManiK/SnapNap/releases/latest"
 )
-_REQUEST_TIMEOUT = 3  
+_REQUEST_TIMEOUT = 3
 
 
 
@@ -41,10 +41,10 @@ def _clean_release_notes(body: str) -> str:
 
 def _icon_path() -> str | None:
     if getattr(sys, "frozen", False):
-        base = sys._MEIPASS
+        base = sys._MEIPASS  # type: ignore[attr-defined]
     else:
         base = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(base, "assets", "snapnap.ico")
+    path = os.path.join(base, "assets", "SnapNap2.ico")
     return path if os.path.isfile(path) else None
 
 
@@ -152,7 +152,7 @@ def _on_yes(root, html_url: str) -> None:
         "SnapNap Update",
         "Please uninstall the current version of SnapNap before "
         "installing the new version.\n\n"
-        "Use uninstaller.exe before installing the new SnapNap.exe.",
+        "Use uninstaller.exe to uninstall the current SnapNap.exe",
         parent=root,
     )
     webbrowser.open(html_url)
