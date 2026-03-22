@@ -44,7 +44,7 @@ When the hotkey is pressed again:
 The program is organized into several logical components.
 
 ```
- Alt + Shift + A (Hotkey)        System Tray (pystray)
+ Alt + J (Hotkey)        System Tray (pystray)
            │                              │
            └──────────────┬───────────────┘
                           ▼
@@ -258,7 +258,7 @@ RegisterHotKey
 Configuration:
 
 ```
-Alt + Shift + A
+Alt + J
 ```
 
 The hotkey is processed inside a **background message loop thread** using:
