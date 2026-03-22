@@ -342,6 +342,18 @@ The logging system records:
 
 ---
 
+# Update System
+
+SnapNap checks for updates on startup.
+
+* queries latest release from GitHub
+* runs silently in background
+* logs result
+
+Does not block startup.
+
+---
+
 # First Launch Experience
 
 On first launch, SnapNap shows a message box explaining the hotkey.
