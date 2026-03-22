@@ -3,6 +3,7 @@
 All notable changes to this project will be documented in this file.
 ---
 
+
 ## version 1.1
 
 Integrated an update checker that fetches the latest release from GitHub and notifies the user if a newer version is available.
