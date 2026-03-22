@@ -20,7 +20,7 @@ The design prioritizes:
 When the user presses the hotkey:
 
 ```
-Alt + Shift + A
+Alt + J
 ```
 
 SnapNap performs the following steps:
