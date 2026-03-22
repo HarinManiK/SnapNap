@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## version 1.2
+
+### Improvements
+- Enhanced logging system:
+  - Significantly more detailed and structured logs
+  - Log rotation enabled (20 MB per file, up to 5 backups)
+- Improved handling of exclusive fullscreen applications (especially games)
+- Faster and more reliable uninstaller, now works even while SnapNap is running
+- More stable suspend/resume flow with better timing and state handling
+- Improved window detection and focus restoration reliability
+
+---
+
+### Changes
+- Hotkey updated: **Alt + Shift + A** → **Alt + J**
+- Updated application tray icon
+
+---
+
 ## version 1.1
 
 Integrated an update checker that fetches the latest release from GitHub and notifies the user if a newer version is available.
