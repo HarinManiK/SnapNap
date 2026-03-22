@@ -457,7 +457,6 @@ Potential improvements include:
 * configurable hotkeys
 * Freeing the RAM
 * Instead of suspending process tree, use windows objects(some apps spawn detached processes that are not children anymore)
-* prevent suspending the network threads(helps with downloads)
 ---
 
 # Summary
