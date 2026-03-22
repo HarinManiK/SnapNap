@@ -2,3 +2,4 @@ psutil
 pystray
 Pillow
 pywin32
+comtypes
