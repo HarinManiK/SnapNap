@@ -25,7 +25,7 @@ Runs as a single instance using a global mutex. Automatically registers itself t
 
 Provides a system tray icon with minimal controls (resume and exit). Exit is disabled while a session is active to avoid leaving processes suspended.
 
-Logs all activity to:
+Logs activity to:
 %APPDATA%/SnapNap/suspend_manager.log
 
 Requires administrator privileges and relaunches itself with elevation if needed.
