@@ -2,7 +2,7 @@
 ![License](https://img.shields.io/badge/license-SPUL--1.0-green)
 
 # SnapNap
-**Xbox-style Quick Resume for Windows** - instantly pause &amp; resume apps or games with **0% CPU/GPU usage while paused**.
+**Console-like pause for Windows** - instantly pause &amp; resume apps or games with **0% CPU/GPU usage while paused**.
 
 
 ## **What it solves** 
