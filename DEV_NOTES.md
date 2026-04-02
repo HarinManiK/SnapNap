@@ -193,6 +193,21 @@ This avoids situations where parent processes spawn new children during suspensi
 
 Resume order is reversed.
 
+## RAM Trimming
+
+After each successful suspension, SnapNap trims the process working set to free physical RAM.
+
+APIs used:
+EmptyWorkingSet
+SetProcessWorkingSetSize(-1, -1)
+
+Processes with RSS below 50 MB are skipped to avoid unnecessary handle operations.
+
+After all processes are suspended, a summary line is logged showing total MB freed across the session.
+
+All trim failures are caught and logged without affecting the suspend operation. 
+
+
 ---
 
 # Fullscreen Handling
@@ -235,6 +250,8 @@ AppSession
  ├ pid
  └ suspended_pids
 ```
+
+Before resuming, SnapNap checks available system RAM. If below 2 GB, a non-blocking warning dialog is shown. Resume always proceeds regardless.
 
 This allows SnapNap to restore:
 
@@ -455,7 +472,6 @@ Potential improvements include:
 * multiple paused sessions
 * Resume the game even with Alt+Tab
 * configurable hotkeys
-* Freeing the RAM
 * Instead of suspending process tree, use windows objects(some apps spawn detached processes that are not children anymore)
 ---
 
