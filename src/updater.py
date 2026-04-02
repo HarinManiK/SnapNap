@@ -3,7 +3,7 @@ import json, logging, os, re, sys, urllib.request, webbrowser
 logger = logging.getLogger("SnapNap")
 
 
-LOCAL_VERSION = "1.2"
+LOCAL_VERSION = "1.3"
 GITHUB_API_URL = (
     "https://api.github.com/repos/HarinManiK/SnapNap/releases/latest"
 )
