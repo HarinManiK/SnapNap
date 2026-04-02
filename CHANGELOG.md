@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ## version 1.3 - April 2 2026
 
 ### Improvements
-Implemented post-suspend memory reclamation by trimming process working sets using EmptyWorkingSet and SetProcessWorkingSetSize. This forces pages into the standby/pagefile, reducing resident set size (RSS) of suspended processes. Added per-process and aggregate memory tracking, along with pre-resume available RAM checks to mitigate paging-induced latency spikes
+- Implemented post-suspend memory reclamation by trimming process working sets using EmptyWorkingSet and SetProcessWorkingSetSize. This forces pages into the standby/pagefile, reducing resident set size (RSS) of suspended processes. Added per-process and aggregate memory tracking, along with pre-resume available RAM checks to mitigate paging-induced latency spikes
 
 ---
 
