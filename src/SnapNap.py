@@ -191,6 +191,51 @@ def _nt_resume(pid: int) -> bool:
         CloseHandle(handle)
 
 
+# RAM trimming helper
+
+PROCESS_SET_QUOTA           = 0x0100
+PROCESS_QUERY_INFORMATION   = 0x0400
+
+def trim_process_memory(pid: int):
+    try:
+        rss_before = psutil.Process(pid).memory_info().rss
+    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+        logger.warning("trim_process_memory: cannot read RSS for PID %d: %s", pid, e)
+        return (0, 0)
+
+    if rss_before < 50 * 1024 * 1024:
+        logger.info("trim_process_memory: PID %d RSS is %.1f MB (< 50 MB) — skipping trim.", pid, rss_before / (1024 * 1024))
+        return (0, 0)
+
+    handle = OpenProcess(PROCESS_SET_QUOTA | PROCESS_QUERY_INFORMATION, False, pid)
+    if not handle:
+        logger.warning("trim_process_memory: OpenProcess failed for PID %d (error %d).", pid, ctypes.GetLastError())
+        return (0, 0)
+    try:
+        ret = ctypes.windll.psapi.EmptyWorkingSet(handle)
+        if ret == 0:
+            logger.warning("trim_process_memory: EmptyWorkingSet failed for PID %d (error %d).", pid, ctypes.GetLastError())
+
+        ret2 = ctypes.windll.kernel32.SetProcessWorkingSetSize(
+            handle,
+            ctypes.c_size_t(-1),
+            ctypes.c_size_t(-1),
+        )
+        if ret2 == 0:
+            logger.warning("trim_process_memory: SetProcessWorkingSetSize failed for PID %d (error %d).", pid, ctypes.GetLastError())
+
+        try:
+            rss_after = psutil.Process(pid).memory_info().rss
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            rss_after = rss_before
+
+        return (rss_before, rss_after)
+    except Exception as e:
+        logger.warning("trim_process_memory: unexpected error for PID %d: %s", pid, e)
+        return (0, 0)
+    finally:
+        CloseHandle(handle)
+
 # Data model
 
 @dataclass
@@ -321,10 +366,17 @@ class ProcessController:
         _t0 = time.perf_counter()
         actually_suspended: List[Tuple[int, str]] = []
         failed: List[Tuple[int, str]] = []
+        total_freed = 0
         for pid, name in reversed(tree):
             if _nt_suspend(pid):
                 logger.info("  ✓ Suspended '%s' (PID %d).", name, pid)
                 actually_suspended.append((pid, name))
+                before, after = trim_process_memory(pid)
+                if before > 0:
+                    freed = before - after
+                    total_freed += freed
+                    logger.info("  RAM trim '%s' (PID %d): %.1f MB → %.1f MB (freed %.1f MB).",
+                                name, pid, before / (1024 * 1024), after / (1024 * 1024), freed / (1024 * 1024))
             else:
                 logger.warning("  ✗ FINAL FAILURE — could not suspend '%s' (PID %d). It will keep running.", name, pid)
                 failed.append((pid, name))
@@ -334,6 +386,7 @@ class ProcessController:
             elapsed, len(actually_suspended), len(tree), len(failed),
             f" Still-running: {[(n, p) for p, n in failed]}" if failed else "",
         )
+        logger.info("Total RAM trimmed across session: %.1f MB freed.", total_freed / (1024 * 1024))
         return actually_suspended
 
 
@@ -539,8 +592,28 @@ class SessionManager:
                 self.session.pid, len(self.session.suspended_pids),
             )
 
+
+            avail_ram = psutil.virtual_memory().available
+            avail_gb = avail_ram / (1024 ** 3)
+            logger.info("Available RAM before resume: %.1f GB.", avail_gb)
+            if avail_gb < 2.0:
+                logger.warning("Low system RAM detected (%.1f GB free) — resume may cause slowdown.", avail_gb)
+                threading.Thread(
+                    target=lambda: ctypes.windll.user32.MessageBoxW(
+                        None,
+                        f"Low system RAM available ({avail_gb:.1f} GB free).\n"
+                        "Resuming may cause system slowdown.\n"
+                        "The app will still resume.",
+                        "SnapNap",
+                        0x00000000 | 0x00000030,  # MB_OK | MB_ICONWARNING
+                    ),
+                    daemon=True,
+                    name="LowRAMWarning",
+                ).start()
+
             ProcessController.resume_tree(self.session.suspended_pids)
             _root_pid = self.session.pid
+
             _t_wake = time.perf_counter()
             while (time.perf_counter() - _t_wake) < 0.500:
                 try:
