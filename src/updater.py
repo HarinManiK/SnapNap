@@ -41,7 +41,7 @@ def _clean_release_notes(body: str) -> str:
 
 def _icon_path() -> str | None:
     if getattr(sys, "frozen", False):
-        base = sys._MEIPASS  # type: ignore[attr-defined]
+        base = sys._MEIPASS 
     else:
         base = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(base, "assets", "SnapNap2.ico")
