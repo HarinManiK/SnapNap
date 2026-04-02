@@ -191,7 +191,7 @@ def _nt_resume(pid: int) -> bool:
         CloseHandle(handle)
 
 
-# RAM trimming helper
+# RAM trimming helper (pages out working set after suspend)
 
 PROCESS_SET_QUOTA           = 0x0100
 PROCESS_QUERY_INFORMATION   = 0x0400
@@ -605,7 +605,7 @@ class SessionManager:
                         "Resuming may cause system slowdown.\n"
                         "The app will still resume.",
                         "SnapNap",
-                        0x00000000 | 0x00000030,  # MB_OK | MB_ICONWARNING
+                        0x00000000 | 0x00000030,
                     ),
                     daemon=True,
                     name="LowRAMWarning",
